@@ -1,0 +1,11 @@
+aws:
+  region: us-east-1
+  s3:
+    bucket: sms-retry-noor
+
+scheduler:
+  shards: 16
+  retryThreadsPerShard: 2
+
+send:
+  successRate: 0.7
