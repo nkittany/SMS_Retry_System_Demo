@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SMS Retry System Tester</title>
+  <style>
+    body { font-family: system-ui, Arial; margin: 24px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+    label { display: block; font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
+    input { padding: 10px; min-width: 220px; }
+    button { padding: 10px 14px; cursor: pointer; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 14px; margin-top: 14px; }
+    pre { background: #f7f7f7; padding: 12px; border-radius: 10px; overflow: auto; }
+    .ok { color: #0a7a0a; font-weight: 600; }
+    .bad { color: #b00020; font-weight: 600; }
+    .small { font-size: 12px; opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <h2>SMS Retry System Tester</h2>
+  <div class="small">Talks to your backend endpoints on <code id="baseUrlLabel"></code></div>
+
+  <div class="card">
+    <h3>Send</h3>
+    <div class="row">
+      <div>
+        <label>Base URL</label>
+        <input id="baseUrl" value="http://localhost:8080" />
+      </div>
+      <div>
+        <label>Phone</label>
+        <input id="phone" value="+972501234567" />
+      </div>
+      <div style="flex: 1; min-width: 260px;">
+        <label>Message</label>
+        <input id="body" value="Hello from UI" style="width:100%;" />
+      </div>
+      <div>
+        <label>Repeat Count</label>
+        <input id="count" type="number" min="1" value="10" />
+      </div>
+    </div>
+
+    <div class="row" style="margin-top: 12px;">
+      <button id="btnSendOne">POST /messages</button>
+      <button id="btnSendRepeat">POST /messages/repeat?count=N</button>
+      <button id="btnGetSuccess">GET /messages/success</button>
+      <button id="btnGetFailed">GET /messages/failed</button>
+      <button id="btnHealth">Quick Check</button>
+      <button id="btnClear">Clear Output</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Output</h3>
+    <div id="status"></div>
+    <pre id="out">{}</pre>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(text, ok=true) {
+      $("status").innerHTML = `<div class="${ok ? "ok":"bad"}">${text}</div>`;
+    }
+    function setOut(obj) {
+      $("out").textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    function getBase() {
+      const base = $("baseUrl").value.trim().replace(/\/+$/, "");
+      $("baseUrlLabel").textContent = base;
+      return base;
+    }
+
+    async function api(path, opts = {}) {
+      const base = getBase();
+      const url = base + path;
+      const res = await fetch(url, {
+        headers: { "Content-Type": "application/json", ...(opts.headers||{}) },
+        ...opts
+      });
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`);
+      }
+      return data;
+    }
+
+    function payload() {
+      return {
+        phone: $("phone").value.trim(),
+        body: $("body").value.trim()
+      };
+    }
+
+    $("btnSendOne").onclick = async () => {
+      try {
+        setStatus("Sending one...");
+        const data = await api("/messages", {
+          method: "POST",
+          body: JSON.stringify(payload())
+        });
+        setStatus("Sent request OK ✅");
+        setOut(data);
+      } catch (e) {
+        setStatus("Send failed ❌", false);
+        setOut(String(e));
+      }
+    };
+
+    $("btnSendRepeat").onclick = async () => {
+      try {
+        const count = Number($("count").value || 1);
+        setStatus(`Sending repeat x${count}...`);
+        const data = await api(`/messages/repeat?count=${encodeURIComponent(count)}`, {
+          method: "POST",
+          body: JSON.stringify(payload())
+        });
+        setStatus("Repeat request OK ✅");
+        setOut(data);
+      } catch (e) {
+        setStatus("Repeat failed ❌", false);
+        setOut(String(e));
+      }
+    };
+
+    $("btnGetSuccess").onclick = async () => {
+      try {
+        setStatus("Loading success...");
+        const data = await api("/messages/success?limit=100");
+        setStatus(`Loaded success (${Array.isArray(data) ? data.length : "?"}) ✅`);
+        setOut(data);
+      } catch (e) {
+        setStatus("Load success failed ❌", false);
+        setOut(String(e));
+      }
+    };
+
+    $("btnGetFailed").onclick = async () => {
+      try {
+        setStatus("Loading failed...");
+        const data = await api("/messages/failed?limit=100");
+        setStatus(`Loaded failed (${Array.isArray(data) ? data.length : "?"}) ✅`);
+        setOut(data);
+      } catch (e) {
+        setStatus("Load failed failed ❌", false);
+        setOut(String(e));
+      }
+    };
+
+    $("btnHealth").onclick = async () => {
+      try {
+        setStatus("Quick Check running...");
+        // Quick check: send one + fetch lists
+        const sent = await api("/messages", { method: "POST", body: JSON.stringify(payload()) });
+        const okList = await api("/messages/success?limit=10");
+        const badList = await api("/messages/failed?limit=10");
+        setStatus("Quick Check OK ✅");
+        setOut({ sent, successSample: okList, failedSample: badList });
+      } catch (e) {
+        setStatus("Quick Check failed ❌", false);
+        setOut(String(e));
+      }
+    };
+
+    $("btnClear").onclick = () => {
+      setStatus("");
+      setOut({});
+    };
+
+    // init
+    getBase();
+  </script>
+</body>
+</html>
